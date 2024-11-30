@@ -8,6 +8,11 @@
 (define-constant ERROR-IDENTITY-NOT-FOUND (err u102))
 (define-constant ERROR-INVALID-VERIFICATION-PROOF (err u103))
 (define-constant ERROR-CREDENTIAL-EXPIRED (err u104))
+(define-constant ERROR-INVALID-INPUT (err u105))
+
+;; Constants for validation
+(define-constant MIN-TIMESTAMP u1)
+(define-constant MAX-TIMESTAMP u9999999999)
 
 ;; Data Maps
 (define-map user-identities
@@ -64,12 +69,29 @@
     )
 )
 
+(define-private (validate-timestamp (timestamp uint))
+    (and 
+        (>= timestamp MIN-TIMESTAMP)
+        (<= timestamp MAX-TIMESTAMP)
+    )
+)
+
+(define-private (validate-buff32 (input (buff 32)))
+    (is-eq (len input) u32)
+)
+
+(define-private (validate-buff33 (input (buff 33)))
+    (is-eq (len input) u33)
+)
+
 ;; Public functions
 (define-public (register-user-identity 
     (user-public-key (buff 33)) 
     (user-identity-hash (buff 32)))
     (let
         ((current-user tx-sender))
+        (asserts! (validate-buff33 user-public-key) ERROR-INVALID-INPUT)
+        (asserts! (validate-buff32 user-identity-hash) ERROR-INVALID-INPUT)
         (asserts! (is-none (map-get? user-identities current-user)) ERROR-IDENTITY-EXISTS)
         (ok (map-set user-identities
             current-user
@@ -91,6 +113,9 @@
     (let
         ((current-user tx-sender)
          (user-identity (unwrap! (map-get? user-identities current-user) ERROR-IDENTITY-NOT-FOUND)))
+        (asserts! (validate-buff32 credential-hash) ERROR-INVALID-INPUT)
+        (asserts! (validate-timestamp expiration-timestamp) ERROR-INVALID-INPUT)
+        (asserts! (> expiration-timestamp block-height) ERROR-CREDENTIAL-EXPIRED)
         (asserts! (not (get identity-revoked user-identity)) ERROR-UNAUTHORIZED-ACCESS)
         (map-set credential-details
             credential-hash
@@ -117,6 +142,8 @@
     (required-attributes (list 5 (string-utf8 64))))
     (let
         ((requesting-user tx-sender))
+        (asserts! (validate-buff32 request-identifier) ERROR-INVALID-INPUT)
+        (asserts! (not (is-none (map-get? disclosure-requests request-identifier))) ERROR-INVALID-INPUT)
         (ok (map-set disclosure-requests
             request-identifier
             {
@@ -136,6 +163,8 @@
         ((current-user tx-sender)
          (disclosure-request (unwrap! (map-get? disclosure-requests request-identifier) ERROR-UNAUTHORIZED-ACCESS))
          (user-identity (unwrap! (map-get? user-identities current-user) ERROR-IDENTITY-NOT-FOUND)))
+        (asserts! (validate-buff32 request-identifier) ERROR-INVALID-INPUT)
+        (asserts! (validate-buff32 verification-proof) ERROR-INVALID-INPUT)
         (asserts! (not (get identity-revoked user-identity)) ERROR-UNAUTHORIZED-ACCESS)
         (asserts! (validate-verification-proof verification-proof (get identity-hash user-identity)) ERROR-INVALID-VERIFICATION-PROOF)
         (ok (map-set disclosure-requests
@@ -154,6 +183,7 @@
     (let
         ((current-user tx-sender)
          (credential-info (unwrap! (map-get? credential-details credential-hash) ERROR-UNAUTHORIZED-ACCESS)))
+        (asserts! (validate-buff32 credential-hash) ERROR-INVALID-INPUT)
         (asserts! (is-eq (get credential-issuer credential-info) current-user) ERROR-UNAUTHORIZED-ACCESS)
         (ok (map-set credential-details
             credential-hash
@@ -168,6 +198,8 @@
     (let
         ((current-user tx-sender)
          (existing-identity (unwrap! (map-get? user-identities current-user) ERROR-IDENTITY-NOT-FOUND)))
+        (asserts! (validate-buff32 updated-identity-hash) ERROR-INVALID-INPUT)
+        (asserts! (validate-buff33 updated-public-key) ERROR-INVALID-INPUT)
         (asserts! (not (get identity-revoked existing-identity)) ERROR-UNAUTHORIZED-ACCESS)
         (ok (map-set user-identities
             current-user
